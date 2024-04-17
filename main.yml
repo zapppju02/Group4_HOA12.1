@@ -15,7 +15,12 @@
         owner: root
         group: root
         mode: 0440
-      validate: '/usr/sbin/visudo -csf %s'
+
+    - name: Validate sudoers file
+      command: /usr/sbin/visudo -csf /etc/sudoers.d/admin
+      register: sudoers_validation
+      changed_when: false
+      failed_when: "'syntax error' in sudoers_validation.stdout"
 
     - name: Add hardened SSH config
       copy:
@@ -26,12 +31,6 @@
         mode: 0600
       notify: Reload SSH
 
-    - name: Add SSH public key for user
-      authorized_key:
-        user: admin
-        key: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"
-        state: present
-    
     - name: Add admin group
       group:
         name: admin
@@ -45,8 +44,39 @@
         create_home: yes
         state: present
 
-- handlers:
-  - name: Reload SSH
-    service:
-      name: sshd
-      state: reloaded
+    - name: Add SSH public key for user
+      authorized_key:
+        user: admin
+        key: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"
+        state: present
+
+  handlers:
+    - name: Reload SSH
+      service:
+        name: sshd
+        state: reloaded
+
+    - name: Remove undesirable packages
+      package:
+        name: "{{ unnecessary_software }}"
+        state: absent
+
+    - name: Stop and disable unnecessary services
+      service:
+        name: "{{ item }}"
+        state: stopped
+        enabled: no
+      loop: "{{ unnecessary_services }}"
+      ignore_errors: yes
+
+  vars:
+    allowed_ssh_networks:
+      - 192.168.56.122
+      - 10.0.2.15
+    unnecessary_services:
+      - postfix
+      - telnet
+    unnecessary_software:
+      - tcpdump
+      - nmap-ncat
+      - wpa_supplicant
